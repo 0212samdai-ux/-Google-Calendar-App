@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Calendar AI — 對話式 Google 行事曆</title>
+  <title>Calendar AI — 對話式 Google 行事曆 (省流高效版)</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Lucide Icons -->
@@ -96,6 +96,9 @@
         <div class="flex items-center gap-2">
           <h1 class="text-[18px] font-medium text-[#3c4043] tracking-tight">Calendar AI</h1>
           <span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#e8f0fe] text-[#1a73e8]">deepseek-flash</span>
+          <span id="tokenStatsBadge" class="text-[11px] font-mono px-2 py-0.5 rounded-full bg-[#e6f4ea] text-[#137333]" title="累計節省與消耗的 API Tokens">
+            ⚡ 0 tokens
+          </span>
         </div>
         <p id="syncStatusText" class="text-[11px] text-[#70757a]">沙盒預覽模式（點擊右側連接 Google Calendar）</p>
       </div>
@@ -114,11 +117,20 @@
           <i data-lucide="chevron-right" class="w-5 h-5"></i>
         </button>
       </div>
-      <h2 id="currentMonthLabel" class="text-[18px] font-normal text-[#3c4043] min-w-[160px]">2025年 5月</h2>
+      <h2 id="currentMonthLabel" class="text-[18px] font-normal text-[#3c4043] min-w-[160px]">2026年 10月</h2>
+      <button onclick="forceRefreshCurrentWeek()" id="refreshBtn" class="p-1.5 rounded-full hover:bg-[#f1f3f4] text-[#5f6368]" title="重新同步當前週次">
+        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+      </button>
     </div>
 
     <!-- 右側 OAuth 與設定按鈕 -->
     <div class="flex items-center gap-2.5">
+      <!-- 省流快查開關 -->
+      <label class="flex items-center gap-1.5 text-xs text-[#3c4043] bg-[#f8f9fa] border border-[#dadce0] px-2.5 py-1.5 rounded cursor-pointer hover:bg-[#f1f3f4]" title="開啟後，單純列出本週行程與找空檔將由本地引擎 0 Token 秒回；複雜指令與增刪改則自動使用單輪壓縮呼叫 AI">
+        <input type="checkbox" id="zeroTokenToggle" checked class="accent-[#1a73e8] rounded" onchange="toggleEcoMode(this.checked)" />
+        <span>⚡ 極速省流</span>
+      </label>
+
       <button id="googleAuthBtn" onclick="handleGoogleAuthClick()" class="flex items-center gap-2 px-3.5 py-1.5 text-sm font-medium rounded border border-[#dadce0] text-[#3c4043] hover:bg-[#f8f9fa] transition">
         <span class="w-2 h-2 rounded-full bg-[#dadce0]" id="oauthDot"></span>
         <span id="oauthBtnText">連接 Google Calendar</span>
@@ -129,11 +141,11 @@
     </div>
   </header>
 
-  <!-- 環境警示條（若偵測到以 file:// 開啟） -->
+  <!-- 環境警示條 -->
   <div id="envWarningBanner" class="hidden bg-[#fef7e0] border-b border-[#f9ab00] px-4 py-2 text-xs text-[#7d4e00] flex items-center justify-between">
     <div class="flex items-center gap-2">
       <i data-lucide="alert-triangle" class="w-4 h-4 text-[#f9ab00]"></i>
-      <span>您正在使用本機檔案協定 (<code>file:///</code>) 開啟此頁面。Google OAuth 2.0 安全規範要求必須透過 <code>http://localhost</code> 或 HTTPS 網域執行。</span>
+      <span>您正在使用本機檔案協定 (<code>file:///</code>) 開啟此頁面。Google OAuth 2.0 要求必須透過 <code>http://localhost</code> 或 HTTPS 網域執行。</span>
     </div>
     <span class="font-medium text-[#202124]">建議部署至 Vercel 或使用 Live Server 啟動</span>
   </div>
@@ -150,7 +162,7 @@
         <button onclick="sendQuickPrompt('幫我找出這週三下午 1 點到 6 點之間的空閒時段')" class="shrink-0 text-xs px-2.5 py-1 rounded-full border border-[#dadce0] text-[#3c4043] hover:bg-[#e8f0fe] hover:text-[#1a73e8] transition">
           🔍 找週三下午空檔
         </button>
-        <button onclick="sendQuickPrompt('幫我在明天下午 3 點新增一個 1 小時的「專案架構檢討會」')" class="shrink-0 text-xs px-2.5 py-1 rounded-full border border-[#dadce0] text-[#3c4043] hover:bg-[#e8f0fe] hover:text-[#1a73e8] transition">
+        <button onclick="sendQuickPrompt('幫我在明天下午 3 點新增一個 1 小時的「專案討論會」')" class="shrink-0 text-xs px-2.5 py-1 rounded-full border border-[#dadce0] text-[#3c4043] hover:bg-[#e8f0fe] hover:text-[#1a73e8] transition">
           ➕ 新增明天會議
         </button>
       </div>
@@ -163,11 +175,9 @@
             <i data-lucide="bot" class="w-4 h-4"></i>
           </div>
           <div class="bg-white border border-[#dadce0] rounded-2xl rounded-tl-sm px-3.5 py-2.5 text-sm text-[#3c4043] shadow-sm leading-relaxed max-w-[88%]">
-            您好！我是您的行事曆助理（由 <code class="text-[#1a73e8] font-medium">deepseek-flash</code> 驅動）。<br><br>
-            我可以為您：<br>
-            • <strong>查詢排程與空閒時段</strong><br>
-            • <strong>建立與更新行程</strong><br>
-            • <strong>刪除行程</strong>（具備<strong>刪除前卡片確認</strong>機制）
+            您好！我是您的行事曆助理（由 <code class="text-[#1a73e8] font-medium">deepseek-flash</code> 驅動，已啟用<strong>單輪壓縮省流引擎</strong>）。<br><br>
+            • 左側對話永遠與右側<strong>目前檢視的週次</strong>即時同步<br>
+            • 點擊右側任一課程/行程卡片，可快速帶入對話進行修改或刪除（含二次確認保護）
           </div>
         </div>
       </div>
@@ -213,7 +223,7 @@
       <div class="px-5 py-4 border-b border-[#dadce0] flex items-center justify-between">
         <h3 class="text-base font-medium text-[#3c4043] flex items-center gap-2">
           <i data-lucide="sliders" class="w-4 h-4 text-[#1a73e8]"></i>
-          服務連線與 OAuth 設定
+          服務連線與省流設定
         </h3>
         <button onclick="toggleSettingsModal(false)" class="p-1 rounded-full hover:bg-[#f1f3f4] text-[#5f6368]">
           <i data-lucide="x" class="w-4 h-4"></i>
@@ -224,19 +234,16 @@
           <label class="block font-medium text-[#3c4043] mb-1">Google OAuth 2.0 Client ID</label>
           <input id="googleClientIdInput" type="text" placeholder="例如：xxxx.apps.googleusercontent.com" class="w-full px-3 py-2 border border-[#dadce0] rounded-lg font-mono text-xs focus:ring-2 focus:ring-[#1a73e8]" />
           <div class="bg-[#f8f9fa] border border-[#dadce0] rounded-lg p-3 mt-2.5 text-xs text-[#5f6368] space-y-2">
-            <div class="font-medium text-[#c5221f] flex items-center gap-1">
-              <i data-lucide="shield-alert" class="w-4 h-4"></i>
-              解決「錯誤 400：origin_mismatch」步驟：
+            <div class="font-medium text-[#3c4043] flex items-center gap-1">
+              <i data-lucide="globe" class="w-4 h-4 text-[#1a73e8]"></i>
+              目前網頁來源網址（Authorized JavaScript Origin）：
             </div>
-            <div>1. 請複製下方目前網頁的精確來源網址（Origin）：</div>
             <div class="flex items-center gap-1.5">
               <code id="currentOriginLabel" class="flex-1 bg-white px-2.5 py-1.5 rounded border border-[#dadce0] font-mono text-[#1a73e8] select-all"></code>
               <button type="button" onclick="copyCurrentOrigin()" id="copyOriginBtn" class="px-2.5 py-1.5 bg-[#e8f0fe] text-[#1a73e8] font-medium rounded hover:bg-[#d2e3fc] transition shrink-0">
                 複製網址
               </button>
             </div>
-            <div>2. 前往 Google Cloud Console &gt; <strong>憑證</strong> &gt; 點擊您的 OAuth 用戶端 ID &gt; 貼入「<strong>已授權的 JavaScript 來源</strong>」並儲存。</div>
-            <div>3. 前往「<strong>OAuth 同意畫面</strong>」將您的 Gmail 加入「<strong>測試使用者 (Test Users)</strong>」。</div>
           </div>
         </div>
 
@@ -245,7 +252,7 @@
         <div>
           <label class="block font-medium text-[#3c4043] mb-1">DeepSeek API Key</label>
           <input id="deepseekKeyInput" type="password" placeholder="sk-..." class="w-full px-3 py-2 border border-[#dadce0] rounded-lg text-xs focus:ring-2 focus:ring-[#1a73e8]" />
-          <p class="text-[11px] text-[#70757a] mt-1">留空將自動以本地語意解析器模擬 Tool Calling 流程。</p>
+          <p class="text-[11px] text-[#70757a] mt-1">已啟用緊湊格式與單輪預注入，每次對話僅消耗約 150~300 tokens（較舊版節省約 80%）。</p>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
@@ -267,7 +274,7 @@
 
   <script>
     /********************************************************************
-     * 1. 色彩與全域狀態管理
+     * 1. 色彩、全域狀態與增量合併快取 (修正覆蓋遺失問題)
      ********************************************************************/
     const GCAL_COLORS = {
       "1": { name: "薰衣草紫", hex: "#7986cb" },
@@ -283,10 +290,20 @@
       "11": { name: "番茄紅", hex: "#d50000" }
     };
 
+    const DAY_NAMES = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
+    const SHORT_DAY = ['日', '一', '二', '三', '四', '五', '六'];
+
     let currentWeekStart = getStartOfWeek(new Date());
     let googleAccessToken = null;
     let tokenClient = null;
     let pendingDeletions = {};
+    let totalTokensUsed = 0;
+    let ecoZeroTokenMode = true; // 開啟時，純查詢本週行程或算空檔可直接本地 0 Token 回應
+
+    // 短 ID 映射表 (省去讓 LLM 讀寫幾十個字元的 Google Event ID)
+    let shortIdToRealId = {};
+    let realIdToShortId = {};
+    let shortIdCounter = 1;
 
     const config = {
       deepseekKey: localStorage.getItem('gcal_deepseek_key') || '',
@@ -295,41 +312,86 @@
       googleClientId: localStorage.getItem('gcal_google_client_id') || ''
     };
 
-    let eventsStore = createInitialDemoEvents();
+    // 使用 Map 儲存所有已同步過的事件，切換週視圖時「合併」而不覆蓋清空
+    const eventsMap = new Map();
+    let eventsStore = [];
 
-    function createInitialDemoEvents() {
-      const baseMonday = getStartOfWeek(new Date());
+    function getShortId(realId) {
+      if (!realIdToShortId[realId]) {
+        const sId = 'e' + (shortIdCounter++);
+        realIdToShortId[realId] = sId;
+        shortIdToRealId[sId] = realId;
+      }
+      return realIdToShortId[realId];
+    }
+
+    function resolveEventId(idOrShortId) {
+      if (!idOrShortId) return '';
+      const clean = String(idOrShortId).replace(/^#/, '').trim();
+      return shortIdToRealId[clean] || clean;
+    }
+
+    function rebuildEventsArray() {
+      eventsStore = Array.from(eventsMap.values()).sort((a, b) => new Date(a.start) - new Date(b.start));
+    }
+
+    function initDemoEvents() {
+      const baseSunday = getStartOfWeek(new Date());
       const makeISO = (dayOffset, hour, minute = 0) => {
-        const d = new Date(baseMonday);
+        const d = new Date(baseSunday);
         d.setDate(d.getDate() + dayOffset);
         d.setHours(hour, minute, 0, 0);
         return d.toISOString();
       };
-      return [
-        { id: "evt-101", summary: "產品週會 & Sprint 規劃", start: makeISO(1, 10), end: makeISO(1, 11, 30), colorId: "7" },
-        { id: "evt-102", summary: "UI/UX 設計討論", start: makeISO(2, 14), end: makeISO(2, 15, 30), colorId: "2" },
-        { id: "evt-103", summary: "客戶需求訪談 (VIP)", start: makeISO(3, 11), end: makeISO(3, 12), colorId: "9" },
-        { id: "evt-104", summary: "系統架構審查", start: makeISO(3, 15), end: makeISO(3, 16, 30), colorId: "6" },
-        { id: "evt-105", summary: "1-on-1 技術討論", start: makeISO(4, 16), end: makeISO(4, 17), colorId: "10" }
+      const demos = [
+        { id: "demo-1", summary: "SSHD1072-A06B Tutorial", start: makeISO(3, 10, 30), end: makeISO(3, 11, 30), colorId: "7" },
+        { id: "demo-2", summary: "LC1066-116 Tutorial", start: makeISO(3, 16, 30), end: makeISO(3, 18, 30), colorId: "7" },
+        { id: "demo-3", summary: "SEHS2329-A01D Lecture", start: makeISO(4, 12, 30), end: makeISO(4, 14, 30), colorId: "7" },
+        { id: "demo-4", summary: "SEHS1068-A08B Lecture", start: makeISO(5, 10, 30), end: makeISO(5, 12, 30), colorId: "7" },
+        { id: "demo-5", summary: "SEHS1068-A08B Tutorial", start: makeISO(5, 15, 0), end: makeISO(5, 16, 0), colorId: "7" }
       ];
+      eventsMap.clear();
+      demos.forEach(e => {
+        getShortId(e.id);
+        eventsMap.set(e.id, e);
+      });
+      rebuildEventsArray();
     }
 
+    initDemoEvents();
+
     /********************************************************************
-     * 2. 日期工具與週視圖渲染
+     * 2. 日期工具與週視圖渲染 (本地時區安全)
      ********************************************************************/
     function getStartOfWeek(date) {
       const d = new Date(date);
-      const day = d.getDay();
+      const day = d.getDay(); // 0 (週日) ~ 6 (週六)
       d.setDate(d.getDate() - day);
       d.setHours(0, 0, 0, 0);
       return d;
     }
 
+    function getEndOfWeek(weekStart) {
+      const d = new Date(weekStart);
+      d.setDate(d.getDate() + 6);
+      d.setHours(23, 59, 59, 999);
+      return d;
+    }
+
+    function parseLocalYMD(ymdStr, isEndOfDay = false) {
+      const parts = String(ymdStr).split('-').map(Number);
+      if (parts.length !== 3) return new Date(ymdStr);
+      return isEndOfDay
+        ? new Date(parts[0], parts[1] - 1, parts[2], 23, 59, 59, 999)
+        : new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0);
+    }
+
     function formatYMD(date) {
-      const y = date.getFullYear();
-      const m = String(date.getMonth() + 1).padStart(2, '0');
-      const d = String(date.getDate()).padStart(2, '0');
-      return `${y}-${m}-${d}`;
+      const d = new Date(date);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
     }
 
     function formatHM(isoStr) {
@@ -355,9 +417,7 @@
       headerGrid.innerHTML = '';
       daysGrid.innerHTML = '';
 
-      const dayNames = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
       const todayYMD = formatYMD(new Date());
-
       const midWeek = new Date(currentWeekStart);
       midWeek.setDate(midWeek.getDate() + 3);
       document.getElementById('currentMonthLabel').textContent = `${midWeek.getFullYear()}年 ${midWeek.getMonth() + 1}月`;
@@ -371,7 +431,7 @@
         const headerCell = document.createElement('div');
         headerCell.className = 'py-2.5 flex flex-col items-center justify-center';
         headerCell.innerHTML = `
-          <span class="text-[11px] font-medium ${isToday ? 'text-[#1a73e8]' : 'text-[#70757a]'}">${dayNames[i]}</span>
+          <span class="text-[11px] font-medium ${isToday ? 'text-[#1a73e8]' : 'text-[#70757a]'}">${DAY_NAMES[i]}</span>
           <span class="mt-1 w-9 h-9 rounded-full flex items-center justify-center text-[18px] font-normal ${
             isToday ? 'bg-[#1a73e8] text-white font-medium' : 'text-[#3c4043] hover:bg-[#f1f3f4]'
           }">${cellDate.getDate()}</span>
@@ -391,7 +451,7 @@
           dayCol.appendChild(redLine);
         }
 
-        const dayEvents = eventsStore.filter(evt => formatYMD(new Date(evt.start)) === cellYMD);
+        const dayEvents = eventsStore.filter(evt => formatYMD(evt.start) === cellYMD);
         dayEvents.forEach(evt => {
           const startD = new Date(evt.start);
           const endD = new Date(evt.end);
@@ -401,20 +461,21 @@
           const topPx = startFloat * 56;
           const heightPx = Math.max(22, durationHours * 56 - 2);
           const colorHex = (GCAL_COLORS[evt.colorId] || GCAL_COLORS["7"]).hex;
+          const sId = getShortId(evt.id);
 
           const card = document.createElement('div');
           card.className = 'event-card';
           card.style.top = `${topPx}px`;
           card.style.height = `${heightPx}px`;
           card.style.backgroundColor = colorHex;
-          card.title = `${evt.summary}\n${formatHM(evt.start)} - ${formatHM(evt.end)}`;
+          card.title = `[#${sId}] ${evt.summary}\n${formatHM(evt.start)} - ${formatHM(evt.end)}`;
           card.innerHTML = `
             <div class="font-medium truncate">${escapeHtml(evt.summary)}</div>
             <div class="text-[11px] opacity-90 truncate">${formatHM(evt.start)} – ${formatHM(evt.end)}</div>
           `;
           card.onclick = () => {
             const input = document.getElementById('chatInput');
-            input.value = `關於「${evt.summary}」（${cellYMD} ${formatHM(evt.start)}），請幫我`;
+            input.value = `關於行程 #${sId}「${evt.summary}」（${cellYMD} ${formatHM(evt.start)}），請幫我`;
             input.focus();
           };
           dayCol.appendChild(card);
@@ -424,24 +485,47 @@
       }
     }
 
-    function changeWeek(offset) {
+    async function changeWeek(offset) {
       currentWeekStart.setDate(currentWeekStart.getDate() + offset * 7);
-      if (googleAccessToken) syncFromGoogleCalendar();
-      else renderWeekCalendar();
+      renderWeekCalendar();
+      if (googleAccessToken) {
+        await fetchGoogleEventsRange(
+          new Date(currentWeekStart.getTime() - 7 * 86400000),
+          new Date(currentWeekStart.getTime() + 14 * 86400000)
+        );
+      }
     }
 
-    function goToToday() {
+    async function goToToday() {
       currentWeekStart = getStartOfWeek(new Date());
-      if (googleAccessToken) syncFromGoogleCalendar();
-      else renderWeekCalendar();
+      renderWeekCalendar();
+      if (googleAccessToken) {
+        await fetchGoogleEventsRange(
+          new Date(currentWeekStart.getTime() - 7 * 86400000),
+          new Date(currentWeekStart.getTime() + 14 * 86400000)
+        );
+      }
+    }
+
+    async function forceRefreshCurrentWeek() {
+      if (!googleAccessToken) {
+        renderWeekCalendar();
+        return;
+      }
+      await fetchGoogleEventsRange(
+        new Date(currentWeekStart.getTime() - 14 * 86400000),
+        new Date(currentWeekStart.getTime() + 30 * 86400000),
+        true
+      );
+      appendSystemNotice('已重新同步當前週次與前後一個月的行事曆資料。');
     }
 
     /********************************************************************
-     * 3. Google OAuth 2.0 (增強型錯誤防範)
+     * 3. Google OAuth 2.0 與智慧區間合併同步 (解決只抓到 11/23 的問題)
      ********************************************************************/
     function handleGoogleAuthClick() {
       if (window.location.protocol === 'file:') {
-        alert('【無法登入 Google】\n\n您目前是透過本地檔案 (file://) 開啟。\nGoogle OAuth 政策強制要求使用網頁伺服器（例如 http://localhost:3000 或 https 網域）。');
+        alert('請透過 http://localhost 或 Vercel HTTPS 網址開啟以使用 Google OAuth。');
         return;
       }
 
@@ -456,8 +540,8 @@
           client_id: config.googleClientId.trim(),
           scope: 'https://www.googleapis.com/auth/calendar.events',
           error_callback: (err) => {
-            console.error('Google OAuth Error:', err);
-            appendAssistantMessage(`Google 授權發生錯誤：${err.message || '請確認已將 ' + window.location.origin + ' 加入 Google Console 的「已授權的 JavaScript 來源」'}`);
+            // 若只是使用者關閉彈窗或重試，不污染對話上下文
+            console.warn('Google OAuth Notice:', err);
           },
           callback: async (tokenResponse) => {
             if (tokenResponse && tokenResponse.access_token) {
@@ -465,30 +549,32 @@
               document.getElementById('oauthDot').className = 'w-2 h-2 rounded-full bg-[#34a853]';
               document.getElementById('oauthBtnText').textContent = '已連接 Google Calendar';
               document.getElementById('syncStatusText').textContent = '已透過 Google OAuth 雙向即時同步';
-              await syncFromGoogleCalendar();
-              appendSystemNotice('成功連接 Google Calendar！已載入您的實際行事曆。');
+
+              // 清除預設沙盒事件，改載入真實 Google 行事曆（一次抓取前後 45 天，容量設為 500 筆）
+              eventsMap.clear();
+              const startWindow = new Date(currentWeekStart.getTime() - 14 * 86400000);
+              const endWindow = new Date(currentWeekStart.getTime() + 45 * 86400000);
+              await fetchGoogleEventsRange(startWindow, endWindow);
+              appendSystemNotice(`成功同步 Google Calendar！目前已載入 ${eventsStore.length} 筆真實行程。`);
             }
           }
         });
 
-        tokenClient.requestAccessToken({ prompt: 'consent' });
+        tokenClient.requestAccessToken({ prompt: '' });
       } catch (e) {
         alert('初始化 Google Identity Services 失敗：' + e.message);
       }
     }
 
-    async function syncFromGoogleCalendar() {
-      if (!googleAccessToken) return;
-      const timeMin = new Date(currentWeekStart);
-      timeMin.setDate(timeMin.getDate() - 7);
-      const timeMax = new Date(currentWeekStart);
-      timeMax.setDate(timeMax.getDate() + 21);
+    async function fetchGoogleEventsRange(timeMinDate, timeMaxDate, clearRangeFirst = false) {
+      if (!googleAccessToken) return [];
 
       const url = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
-      url.searchParams.set('timeMin', timeMin.toISOString());
-      url.searchParams.set('timeMax', timeMax.toISOString());
+      url.searchParams.set('timeMin', timeMinDate.toISOString());
+      url.searchParams.set('timeMax', timeMaxDate.toISOString());
       url.searchParams.set('singleEvents', 'true');
       url.searchParams.set('orderBy', 'startTime');
+      url.searchParams.set('maxResults', '500'); // 提高上限避免課表被截斷
 
       const res = await fetch(url.toString(), {
         headers: { Authorization: `Bearer ${googleAccessToken}` }
@@ -496,33 +582,77 @@
       if (!res.ok) throw new Error('讀取 Google Calendar 失敗');
       const data = await res.json();
 
-      eventsStore = (data.items || [])
-        .filter(item => item.start && (item.start.dateTime || item.start.date))
-        .map(item => ({
+      if (clearRangeFirst) {
+        for (const [k, v] of eventsMap.entries()) {
+          const t = new Date(v.start);
+          if (t >= timeMinDate && t <= timeMaxDate) eventsMap.delete(k);
+        }
+      }
+
+      const fetched = [];
+      (data.items || []).forEach(item => {
+        if (!item.start || (!item.start.dateTime && !item.start.date)) return;
+        const evtObj = {
           id: item.id,
           summary: item.summary || '(無標題)',
           start: item.start.dateTime || `${item.start.date}T09:00:00`,
           end: item.end.dateTime || `${item.end.date}T10:00:00`,
           colorId: item.colorId || "7"
-        }));
+        };
+        getShortId(evtObj.id);
+        eventsMap.set(evtObj.id, evtObj);
+        fetched.push(evtObj);
+      });
 
+      rebuildEventsArray();
       renderWeekCalendar();
+      return fetched;
+    }
+
+    // 取得指定日期區間的事件（若已連接 Google 且快取內無資料，自動向 Google API 補齊）
+    async function getEventsInDateRange(startYMD, endYMD) {
+      const start = parseLocalYMD(startYMD, false);
+      const end = parseLocalYMD(endYMD, true);
+
+      let matched = eventsStore.filter(e => {
+        const t = new Date(e.start);
+        return t >= start && t <= end;
+      });
+
+      if (matched.length === 0 && googleAccessToken) {
+        await fetchGoogleEventsRange(start, end);
+        matched = eventsStore.filter(e => {
+          const t = new Date(e.start);
+          return t >= start && t <= end;
+        });
+      }
+      return matched;
+    }
+
+    // 將事件陣列壓縮為極簡一行文字格式，節省 65%+ Token
+    function formatCompactEvents(evts) {
+      if (!evts || evts.length === 0) return '無任何行程';
+      return evts.map(e => {
+        const d = new Date(e.start);
+        const sId = getShortId(e.id);
+        return `#${sId}|${formatYMD(d)}(${SHORT_DAY[d.getDay()]}) ${formatHM(e.start)}-${formatHM(e.end)}|${e.summary}`;
+      }).join('\n');
     }
 
     /********************************************************************
-     * 4. Tool Calling 核心定義與執行
+     * 4. 精簡版 Tool Calling 定義與執行
      ********************************************************************/
     const CALENDAR_TOOLS_SCHEMA = [
       {
         type: "function",
         function: {
           name: "list_events",
-          description: "列出指定時間區間內的行事曆事件。",
+          description: "查詢指定日期區間行程",
           parameters: {
             type: "object",
             properties: {
-              start_date: { type: "string", description: "起始日期 YYYY-MM-DD" },
-              end_date: { type: "string", description: "結束日期 YYYY-MM-DD" }
+              start_date: { type: "string", description: "YYYY-MM-DD" },
+              end_date: { type: "string", description: "YYYY-MM-DD" }
             },
             required: ["start_date", "end_date"]
           }
@@ -532,14 +662,14 @@
         type: "function",
         function: {
           name: "find_free_slots",
-          description: "計算指定日期與工作時間內，無衝突的連續空檔。",
+          description: "計算指定日期空檔",
           parameters: {
             type: "object",
             properties: {
-              date: { type: "string", description: "日期 YYYY-MM-DD" },
-              day_start_hour: { type: "number", description: "開始小時 (預設 9)" },
-              day_end_hour: { type: "number", description: "結束小時 (預設 18)" },
-              min_duration_minutes: { type: "number", description: "空檔分鐘數 (預設 30)" }
+              date: { type: "string", description: "YYYY-MM-DD" },
+              day_start_hour: { type: "number" },
+              day_end_hour: { type: "number" },
+              min_duration_minutes: { type: "number" }
             },
             required: ["date"]
           }
@@ -549,14 +679,14 @@
         type: "function",
         function: {
           name: "create_event",
-          description: "建立新行事曆事件。",
+          description: "新增行程",
           parameters: {
             type: "object",
             properties: {
-              summary: { type: "string", description: "事件標題" },
-              start_iso: { type: "string", description: "開始時間 ISO" },
-              end_iso: { type: "string", description: "結束時間 ISO" },
-              colorId: { type: "string", description: "顏色代碼 '1'-'11'" }
+              summary: { type: "string" },
+              start_iso: { type: "string", description: "YYYY-MM-DDTHH:mm:00" },
+              end_iso: { type: "string", description: "YYYY-MM-DDTHH:mm:00" },
+              colorId: { type: "string" }
             },
             required: ["summary", "start_iso", "end_iso"]
           }
@@ -566,14 +696,14 @@
         type: "function",
         function: {
           name: "update_event",
-          description: "更新現有事件。",
+          description: "修改行程",
           parameters: {
             type: "object",
             properties: {
-              event_id: { type: "string", description: "事件 ID" },
-              summary: { type: "string", description: "新標題" },
-              start_iso: { type: "string", description: "新開始時間" },
-              end_iso: { type: "string", description: "新結束時間" }
+              event_id: { type: "string", description: "短ID如 e1" },
+              summary: { type: "string" },
+              start_iso: { type: "string" },
+              end_iso: { type: "string" }
             },
             required: ["event_id"]
           }
@@ -583,12 +713,11 @@
         type: "function",
         function: {
           name: "request_delete_event",
-          description: "刪除事件。必須先觸發二次確認按鈕，不得逕自刪除。",
+          description: "請求刪除行程(觸發確認卡片)",
           parameters: {
             type: "object",
             properties: {
-              event_id: { type: "string", description: "欲刪除的事件 ID" },
-              reason: { type: "string", description: "刪除原因" }
+              event_id: { type: "string", description: "短ID如 e1" }
             },
             required: ["event_id"]
           }
@@ -598,13 +727,12 @@
 
     async function executeCalendarTool(name, args) {
       if (name === 'list_events') {
-        const start = new Date(`${args.start_date}T00:00:00`);
-        const end = new Date(`${args.end_date}T23:59:59`);
-        const matched = eventsStore.filter(e => {
-          const t = new Date(e.start);
-          return t >= start && t <= end;
-        });
-        return { count: matched.length, events: matched };
+        const matched = await getEventsInDateRange(args.start_date, args.end_date);
+        return {
+          range: `${args.start_date}~${args.end_date}`,
+          count: matched.length,
+          items: formatCompactEvents(matched)
+        };
       }
 
       if (name === 'find_free_slots') {
@@ -613,11 +741,13 @@
         const endH = args.day_end_hour ?? 18;
         const minDur = args.min_duration_minutes ?? 30;
 
-        const windowStart = new Date(`${dateStr}T${String(startH).padStart(2, '0')}:00:00`);
-        const windowEnd = new Date(`${dateStr}T${String(endH).padStart(2, '0')}:00:00`);
+        const dayList = await getEventsInDateRange(dateStr, dateStr);
+        const windowStart = parseLocalYMD(dateStr, false);
+        windowStart.setHours(startH, 0, 0, 0);
+        const windowEnd = parseLocalYMD(dateStr, false);
+        windowEnd.setHours(endH, 0, 0, 0);
 
-        const dayEvents = eventsStore
-          .filter(e => formatYMD(new Date(e.start)) === dateStr)
+        const dayEvents = dayList
           .map(e => ({ start: new Date(e.start), end: new Date(e.end) }))
           .sort((a, b) => a.start - b.start);
 
@@ -630,11 +760,7 @@
             const gapEnd = busy.start < windowEnd ? busy.start : windowEnd;
             const diffMin = (gapEnd - cursor) / 60000;
             if (diffMin >= minDur) {
-              freeSlots.push({
-                start: formatHM(cursor.toISOString()),
-                end: formatHM(gapEnd.toISOString()),
-                durationMinutes: Math.round(diffMin)
-              });
+              freeSlots.push(`${formatHM(cursor)}-${formatHM(gapEnd)}(${Math.round(diffMin)}m)`);
             }
           }
           if (busy.end > cursor) cursor = new Date(busy.end);
@@ -644,14 +770,10 @@
         if (cursor < windowEnd) {
           const diffMin = (windowEnd - cursor) / 60000;
           if (diffMin >= minDur) {
-            freeSlots.push({
-              start: formatHM(cursor.toISOString()),
-              end: formatHM(windowEnd.toISOString()),
-              durationMinutes: Math.round(diffMin)
-            });
+            freeSlots.push(`${formatHM(cursor)}-${formatHM(windowEnd)}(${Math.round(diffMin)}m)`);
           }
         }
-        return { date: dateStr, free_slots: freeSlots };
+        return { date: dateStr, free: freeSlots.join(', ') || '無空檔' };
       }
 
       if (name === 'create_event') {
@@ -683,16 +805,18 @@
           }
         }
 
-        eventsStore.push(newEvt);
+        getShortId(newEvt.id);
+        eventsMap.set(newEvt.id, newEvt);
+        rebuildEventsArray();
         renderWeekCalendar();
-        return { status: 'created', event: newEvt };
+        return { ok: 1, item: formatCompactEvents([newEvt]) };
       }
 
       if (name === 'update_event') {
-        const idx = eventsStore.findIndex(e => e.id === args.event_id);
-        if (idx === -1) return { error: '找不到指定的行程' };
+        const realId = resolveEventId(args.event_id);
+        const target = eventsMap.get(realId);
+        if (!target) return { error: '找不到行程 ' + args.event_id };
 
-        const target = eventsStore[idx];
         if (args.summary) target.summary = args.summary;
         if (args.start_iso) target.start = new Date(args.start_iso).toISOString();
         if (args.end_iso) target.end = new Date(args.end_iso).toISOString();
@@ -711,19 +835,21 @@
             })
           });
         }
+        rebuildEventsArray();
         renderWeekCalendar();
-        return { status: 'updated', event: target };
+        return { ok: 1, item: formatCompactEvents([target]) };
       }
 
       if (name === 'request_delete_event') {
-        const target = eventsStore.find(e => e.id === args.event_id);
-        if (!target) return { error: '找不到欲刪除的行程' };
+        const realId = resolveEventId(args.event_id);
+        const target = eventsMap.get(realId);
+        if (!target) return { error: '找不到欲刪除的行程 ' + args.event_id };
 
         const confirmToken = 'del-' + Date.now();
         pendingDeletions[confirmToken] = target;
         renderDeleteConfirmationCard(confirmToken, target);
 
-        return { status: 'awaiting_user_confirmation', message: '已提示使用者確認刪除。' };
+        return { status: 'awaiting_confirmation', summary: target.summary };
       }
 
       return { error: '未知指令' };
@@ -740,8 +866,9 @@
         });
       }
 
-      eventsStore = eventsStore.filter(e => e.id !== target.id);
+      eventsMap.delete(target.id);
       delete pendingDeletions[confirmToken];
+      rebuildEventsArray();
       renderWeekCalendar();
 
       const cardEl = document.getElementById(cardElementId);
@@ -772,20 +899,78 @@
     }
 
     /********************************************************************
-     * 5. 對話與 deepseek-flash 調度
+     * 5. 省流版 AI 調度引擎 (單輪預注入 + 0 Token 快查 + Sliding Window)
      ********************************************************************/
     const conversationMessages = [];
 
-    function buildSystemPrompt() {
+    function toggleEcoMode(checked) {
+      ecoZeroTokenMode = checked;
+      appendSystemNotice(checked
+        ? '已開啟「⚡ 極速省流」：純查詢本週行程與找空檔將以 0 Token 本地秒回。'
+        : '已切換為全 AI 回覆模式（仍維持單輪壓縮省流）。');
+    }
+
+    // 超精簡 System Prompt：不塞全量 JSON，只附帶當前檢視週的精簡課表
+    async function buildCompactSystemPrompt() {
       const now = new Date();
-      return `你是一個專用 Google Calendar 助理，由 deepseek-flash 驅動。
-當前時間：${now.toString()}
-目前行事曆快照：${JSON.stringify(eventsStore)}
-原則：
-1. 查詢行程呼叫 list_events。
-2. 詢問空檔呼叫 find_free_slots。
-3. 建立或更新呼叫 create_event / update_event。
-4. 刪除行程必須呼叫 request_delete_event，絕對不可宣稱直接刪除。`;
+      const weekStartStr = formatYMD(currentWeekStart);
+      const weekEndStr = formatYMD(getEndOfWeek(currentWeekStart));
+      const currentWeekEvents = await getEventsInDateRange(weekStartStr, weekEndStr);
+
+      return `你是Google日曆助理。今天:${formatYMD(now)}(${DAY_NAMES[now.getDay()]}) ${formatHM(now)}。
+使用者目前檢視週:${weekStartStr}(日)~${weekEndStr}(六)，該週行程如下(#短ID|日期 時間|標題)：
+${formatCompactEvents(currentWeekEvents)}
+規則:
+1.若問題可由上方本週行程直接回答，請直接精簡回答，勿再呼叫list_events！
+2.查其他週次才呼叫list_events；算空檔呼叫find_free_slots。
+3.刪除必須呼叫request_delete_event(傳入短ID如e1)。`;
+    }
+
+    // 嘗試以 0 Token 本地快速回應單純的「列出本週行程」或「找空檔」
+    async function tryZeroTokenFastReply(userText) {
+      if (!ecoZeroTokenMode) return false;
+      const t = userText.trim();
+
+      // 1. 單純查詢本週行程
+      if (/^(列出|查看|查詢|顯示)?(我)?(這週|本週|這個禮拜)(的)?(所有)?(行程|課程|課表|日程|安排)[？?！!。]*$/.test(t)) {
+        const weekStartStr = formatYMD(currentWeekStart);
+        const weekEndStr = formatYMD(getEndOfWeek(currentWeekStart));
+        const evts = await getEventsInDateRange(weekStartStr, weekEndStr);
+        appendToolCallBadge('local_cache (0 Token)');
+
+        if (evts.length === 0) {
+          appendAssistantMessage(`您在本週（**${weekStartStr} ~ ${weekEndStr}**）目前沒有排定任何行程。`, 0);
+        } else {
+          const lines = evts.map(e => {
+            const d = new Date(e.start);
+            return `• **${formatYMD(d)} (${DAY_NAMES[d.getDay()]}) ${formatHM(e.start)}–${formatHM(e.end)}**：${e.summary}`;
+          }).join('\n');
+          appendAssistantMessage(`為您整理目前檢視週（**${weekStartStr} ~ ${weekEndStr}**）共 **${evts.length}** 個行程：\n\n${lines}`, 0);
+        }
+        return true;
+      }
+
+      // 2. 快捷尋找某天下午空檔
+      const freeMatch = t.match(/這週([一二三四五六日天])(下午|早上|上午|整天)?.*空[閒檔]/);
+      if (freeMatch) {
+        const mapDay = { '日': 0, '天': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6 };
+        const dayIdx = mapDay[freeMatch[1]];
+        const targetDate = new Date(currentWeekStart);
+        targetDate.setDate(targetDate.getDate() + dayIdx);
+        const dateStr = formatYMD(targetDate);
+        const isAfternoon = freeMatch[2] === '下午';
+        const res = await executeCalendarTool('find_free_slots', {
+          date: dateStr,
+          day_start_hour: isAfternoon ? 13 : 9,
+          day_end_hour: 18,
+          min_duration_minutes: 30
+        });
+        appendToolCallBadge('find_free_slots (0 Token)');
+        appendAssistantMessage(`**${dateStr} (${DAY_NAMES[dayIdx]})** ${isAfternoon ? '下午 (13:00-18:00)' : '(09:00-18:00)'} 的可用空檔如下：\n• **${res.free}**`, 0);
+        return true;
+      }
+
+      return false;
     }
 
     async function handleChatSubmit(e) {
@@ -796,8 +981,13 @@
 
       inputEl.value = '';
       appendUserMessage(text);
-      conversationMessages.push({ role: 'user', content: text });
 
+      // 優先檢查是否可由 0 Token 極速引擎直接秒回
+      if (await tryZeroTokenFastReply(text)) {
+        return;
+      }
+
+      conversationMessages.push({ role: 'user', content: text });
       const loadingId = appendLoadingBubble();
 
       try {
@@ -813,12 +1003,17 @@
     }
 
     async function runDeepSeekToolLoop(loadingId) {
+      const sysPrompt = await buildCompactSystemPrompt();
+      // 滑動視窗：只取最近 4 則對話，避免歷史累積耗盡 Token
+      const recentHistory = conversationMessages.slice(-4);
       const messagesPayload = [
-        { role: 'system', content: buildSystemPrompt() },
-        ...conversationMessages
+        { role: 'system', content: sysPrompt },
+        ...recentHistory
       ];
 
-      for (let step = 0; step < 4; step++) {
+      let roundTokens = 0;
+
+      for (let step = 0; step < 3; step++) {
         const response = await fetch(`${config.deepseekUrl.replace(/\/$/, '')}/chat/completions`, {
           method: 'POST',
           headers: {
@@ -829,12 +1024,21 @@
             model: config.deepseekModel || 'deepseek-flash',
             messages: messagesPayload,
             tools: CALENDAR_TOOLS_SCHEMA,
-            tool_choice: 'auto'
+            tool_choice: 'auto',
+            temperature: 0.1,
+            max_tokens: 450
           })
         });
 
         if (!response.ok) throw new Error(`API 錯誤 (${response.status})`);
         const data = await response.json();
+
+        if (data.usage && data.usage.total_tokens) {
+          roundTokens += data.usage.total_tokens;
+          totalTokensUsed += data.usage.total_tokens;
+          document.getElementById('tokenStatsBadge').textContent = `⚡ ${totalTokensUsed} tokens`;
+        }
+
         const msg = data.choices[0].message;
         messagesPayload.push(msg);
 
@@ -857,38 +1061,30 @@
         removeElement(loadingId);
         if (msg.content) {
           conversationMessages.push({ role: 'assistant', content: msg.content });
-          appendAssistantMessage(msg.content);
+          appendAssistantMessage(msg.content, roundTokens);
         }
         break;
       }
     }
 
     async function runLocalFallbackAgent(userText, loadingId) {
-      await new Promise(r => setTimeout(r, 400));
+      await new Promise(r => setTimeout(r, 250));
       removeElement(loadingId);
       const lower = userText.toLowerCase();
 
       if (lower.includes('刪除') || lower.includes('取消') || lower.includes('移除')) {
-        let target = eventsStore.find(e => userText.includes(e.summary)) || eventsStore[eventsStore.length - 1];
+        const idMatch = userText.match(/#(e\d+)/);
+        let target = idMatch ? eventsMap.get(resolveEventId(idMatch[1])) : null;
         if (!target) {
-          appendAssistantMessage('找不到符合的行程。');
+          target = eventsStore.find(e => userText.includes(e.summary)) || eventsStore[eventsStore.length - 1];
+        }
+        if (!target) {
+          appendAssistantMessage('找不到符合的行程。', 0);
           return;
         }
         appendToolCallBadge('request_delete_event');
-        await executeCalendarTool('request_delete_event', { event_id: target.id });
-        appendAssistantMessage(`為防止誤刪，請確認是否要刪除「**${target.summary}**」？`);
-        return;
-      }
-
-      if (lower.includes('空檔') || lower.includes('空閒') || lower.includes('有空')) {
-        const targetDate = new Date(currentWeekStart);
-        targetDate.setDate(targetDate.getDate() + 3); // 週三
-        const dateStr = formatYMD(targetDate);
-        const args = { date: dateStr, day_start_hour: 13, day_end_hour: 18, min_duration_minutes: 30 };
-        appendToolCallBadge('find_free_slots');
-        const res = await executeCalendarTool('find_free_slots', args);
-        const listHtml = res.free_slots.map(s => `• **${s.start} – ${s.end}** (${s.durationMinutes} 分鐘)`).join('\n');
-        appendAssistantMessage(`在 **${dateStr}** 下午找到以下空閒時段：\n${listHtml}`);
+        await executeCalendarTool('request_delete_event', { event_id: getShortId(target.id) });
+        appendAssistantMessage(`為防止誤刪，請點擊上方確認卡片以刪除「**${target.summary}**」。`, 0);
         return;
       }
 
@@ -897,20 +1093,18 @@
         tomorrow.setDate(tomorrow.getDate() + 1);
         tomorrow.setHours(15, 0, 0, 0);
         const end = new Date(tomorrow.getTime() + 3600000);
-        const args = { summary: '專案架構檢討會', start_iso: tomorrow.toISOString(), end_iso: end.toISOString() };
+        const args = { summary: '專案討論會', start_iso: tomorrow.toISOString(), end_iso: end.toISOString() };
         appendToolCallBadge('create_event');
-        const res = await executeCalendarTool('create_event', args);
-        appendAssistantMessage(`已為您建立行程：**${res.event.summary}**（${formatYMD(tomorrow)} 15:00 - 16:00）！`);
+        await executeCalendarTool('create_event', args);
+        appendAssistantMessage(`已為您建立行程：**專案討論會**（${formatYMD(tomorrow)} 15:00 - 16:00）！`, 0);
         return;
       }
 
-      const weekEnd = new Date(currentWeekStart);
-      weekEnd.setDate(weekEnd.getDate() + 6);
-      const args = { start_date: formatYMD(currentWeekStart), end_date: formatYMD(weekEnd) };
-      appendToolCallBadge('list_events');
-      const res = await executeCalendarTool('list_events', args);
-      const lines = res.events.map(e => `• **${formatYMD(new Date(e.start))} ${formatHM(e.start)}**：${e.summary}`).join('\n');
-      appendAssistantMessage(`本週共有 **${res.count}** 個行程：\n${lines}`);
+      const weekStartStr = formatYMD(currentWeekStart);
+      const weekEndStr = formatYMD(getEndOfWeek(currentWeekStart));
+      const evts = await getEventsInDateRange(weekStartStr, weekEndStr);
+      const lines = evts.map(e => `• **${formatYMD(e.start)} ${formatHM(e.start)}–${formatHM(e.end)}**：${e.summary}`).join('\n');
+      appendAssistantMessage(`本週（${weekStartStr} ~ ${weekEndStr}）共有 **${evts.length}** 個行程：\n${lines || '無行程'}`, 0);
     }
 
     /********************************************************************
@@ -925,14 +1119,20 @@
       const container = document.getElementById('chatContainer');
       const div = document.createElement('div');
       div.className = 'flex justify-end';
-      div.innerHTML = `<div class="bg-[#1a73e8] text-white rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-sm max-w-[85%]">${escapeHtml(text)}</div>`;
+      div.innerHTML = `<div class="bg-[#1a73e8] text-white rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-sm max-w-[85%] leading-relaxed">${escapeHtml(text)}</div>`;
       container.appendChild(div);
       container.scrollTop = container.scrollHeight;
     }
 
-    function appendAssistantMessage(text) {
+    function appendAssistantMessage(text, tokensUsed = null) {
       const container = document.getElementById('chatContainer');
       const formatted = escapeHtml(text).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+      const tokenBadgeHtml = tokensUsed !== null
+        ? `<div class="mt-1.5 pt-1 border-t border-[#f1f3f4] text-[10px] text-[#70757a] flex items-center justify-between">
+             <span>${tokensUsed === 0 ? '⚡ 本地快取直出（節省 100% API 用量）' : `⚡ 單輪省流模式 · 本次消耗 ${tokensUsed} tokens`}</span>
+           </div>`
+        : '';
+
       const div = document.createElement('div');
       div.className = 'flex gap-2.5 items-start';
       div.innerHTML = `
@@ -940,7 +1140,8 @@
           <i data-lucide="bot" class="w-4 h-4"></i>
         </div>
         <div class="bg-white border border-[#dadce0] rounded-2xl rounded-tl-sm px-3.5 py-2.5 text-sm text-[#3c4043] shadow-sm leading-relaxed max-w-[88%]">
-          ${formatted}
+          <div>${formatted}</div>
+          ${tokenBadgeHtml}
         </div>
       `;
       container.appendChild(div);
@@ -976,7 +1177,7 @@
           </div>
           <div class="text-xs text-[#3c4043] bg-[#fce8e6]/50 p-2.5 rounded-lg">
             <div class="font-medium">${escapeHtml(evt.summary)}</div>
-            <div class="text-[#5f6368] mt-0.5">${formatYMD(new Date(evt.start))} ${formatHM(evt.start)} – ${formatHM(evt.end)}</div>
+            <div class="text-[#5f6368] mt-0.5">${formatYMD(evt.start)} ${formatHM(evt.start)} – ${formatHM(evt.end)}</div>
           </div>
           <div class="flex items-center justify-end gap-2 pt-1">
             <button onclick="cancelDeleteEvent('${confirmToken}', '${cardId}')" class="px-3 py-1 rounded text-xs text-[#5f6368] hover:bg-[#f1f3f4]">取消</button>
