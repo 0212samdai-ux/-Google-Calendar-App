@@ -133,7 +133,7 @@
   <div id="envWarningBanner" class="hidden bg-[#fef7e0] border-b border-[#f9ab00] px-4 py-2 text-xs text-[#7d4e00] flex items-center justify-between">
     <div class="flex items-center gap-2">
       <i data-lucide="alert-triangle" class="w-4 h-4 text-[#f9ab00]"></i>
-      <span>您正在使用本機檔案協定 (<code>file:///</code>) 開啟此頁面。Google OAuth 2.0 安全規範要求必須透過 <code>http://localhost</code> 或 HTTPS 網域執行，否則將出現 <strong>400 invalid_request</strong> 錯誤。</span>
+      <span>您正在使用本機檔案協定 (<code>file:///</code>) 開啟此頁面。Google OAuth 2.0 安全規範要求必須透過 <code>http://localhost</code> 或 HTTPS 網域執行。</span>
     </div>
     <span class="font-medium text-[#202124]">建議部署至 Vercel 或使用 Live Server 啟動</span>
   </div>
@@ -223,11 +223,20 @@
         <div>
           <label class="block font-medium text-[#3c4043] mb-1">Google OAuth 2.0 Client ID</label>
           <input id="googleClientIdInput" type="text" placeholder="例如：xxxx.apps.googleusercontent.com" class="w-full px-3 py-2 border border-[#dadce0] rounded-lg font-mono text-xs focus:ring-2 focus:ring-[#1a73e8]" />
-          <div class="bg-[#f8f9fa] border border-[#dadce0] rounded-lg p-3 mt-2 text-xs text-[#5f6368] space-y-1">
-            <div class="font-medium text-[#202124]">⚠️ 避免 400 invalid_request 檢查清單：</div>
-            <div>• 目前執行來源：<code id="currentOriginLabel" class="bg-white px-1 py-0.5 rounded border border-[#dadce0] font-mono text-[#1a73e8]"></code></div>
-            <div>• 請確保此來源已加入 Google Console 的「<strong>已授權的 JavaScript 來源</strong>」（末尾不可有 <code>/</code>）。</div>
-            <div>• 應用程式發布狀態為「測試」時，需將您的帳號加入「<strong>測試使用者 (Test Users)</strong>」。</div>
+          <div class="bg-[#f8f9fa] border border-[#dadce0] rounded-lg p-3 mt-2.5 text-xs text-[#5f6368] space-y-2">
+            <div class="font-medium text-[#c5221f] flex items-center gap-1">
+              <i data-lucide="shield-alert" class="w-4 h-4"></i>
+              解決「錯誤 400：origin_mismatch」步驟：
+            </div>
+            <div>1. 請複製下方目前網頁的精確來源網址（Origin）：</div>
+            <div class="flex items-center gap-1.5">
+              <code id="currentOriginLabel" class="flex-1 bg-white px-2.5 py-1.5 rounded border border-[#dadce0] font-mono text-[#1a73e8] select-all"></code>
+              <button type="button" onclick="copyCurrentOrigin()" id="copyOriginBtn" class="px-2.5 py-1.5 bg-[#e8f0fe] text-[#1a73e8] font-medium rounded hover:bg-[#d2e3fc] transition shrink-0">
+                複製網址
+              </button>
+            </div>
+            <div>2. 前往 Google Cloud Console &gt; <strong>憑證</strong> &gt; 點擊您的 OAuth 用戶端 ID &gt; 貼入「<strong>已授權的 JavaScript 來源</strong>」並儲存。</div>
+            <div>3. 前往「<strong>OAuth 同意畫面</strong>」將您的 Gmail 加入「<strong>測試使用者 (Test Users)</strong>」。</div>
           </div>
         </div>
 
@@ -431,9 +440,8 @@
      * 3. Google OAuth 2.0 (增強型錯誤防範)
      ********************************************************************/
     function handleGoogleAuthClick() {
-      // 1. 檢查是否以 file:// 協定執行
       if (window.location.protocol === 'file:') {
-        alert('【無法登入 Google】\n\n您目前是透過本地檔案 (file://) 開啟。\nGoogle OAuth 政策強制要求使用網頁伺服器（例如 http://localhost:3000 或 https 網域）。\n\n請參考文檔部署至 Vercel 或使用 VS Code Live Server 啟動！');
+        alert('【無法登入 Google】\n\n您目前是透過本地檔案 (file://) 開啟。\nGoogle OAuth 政策強制要求使用網頁伺服器（例如 http://localhost:3000 或 https 網域）。');
         return;
       }
 
@@ -449,7 +457,7 @@
           scope: 'https://www.googleapis.com/auth/calendar.events',
           error_callback: (err) => {
             console.error('Google OAuth Error:', err);
-            appendAssistantMessage(`Google 授權發生錯誤：${err.message || '請檢查 Client ID 與 Authorized Origins 設定'}`);
+            appendAssistantMessage(`Google 授權發生錯誤：${err.message || '請確認已將 ' + window.location.origin + ' 加入 Google Console 的「已授權的 JavaScript 來源」'}`);
           },
           callback: async (tokenResponse) => {
             if (tokenResponse && tokenResponse.access_token) {
@@ -1015,6 +1023,15 @@
     /********************************************************************
      * 7. 設定 Modal 與環境檢測
      ********************************************************************/
+    function copyCurrentOrigin() {
+      const originText = window.location.origin;
+      navigator.clipboard.writeText(originText).then(() => {
+        const btn = document.getElementById('copyOriginBtn');
+        btn.textContent = '已複製！';
+        setTimeout(() => { btn.textContent = '複製網址'; }, 2000);
+      });
+    }
+
     function toggleSettingsModal(show) {
       const modal = document.getElementById('settingsModal');
       if (show) {
@@ -1047,7 +1064,6 @@
     }
 
     window.addEventListener('DOMContentLoaded', () => {
-      // 偵測是否由 file:// 開啟，若是則顯示警告條
       if (window.location.protocol === 'file:') {
         document.getElementById('envWarningBanner').classList.remove('hidden');
       }
